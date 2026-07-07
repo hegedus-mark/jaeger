@@ -27,9 +27,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
-
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegermcp"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerquery"
 )
 
 func TestFilteringTracerProvider_AllowedComponent(t *testing.T) {
@@ -39,7 +36,10 @@ func TestFilteringTracerProvider_AllowedComponent(t *testing.T) {
 
 	ftp := &filteringTracerProvider{real: realTP, noop: noop}
 
-	for _, id := range []string{jaegerquery.ID.String(), jaegermcp.ID.String()} {
+	tracedComponents["test_component"] = struct{}{}
+	defer delete(tracedComponents, "test_component")
+
+	for _, id := range []string{"test_component"} {
 		t.Run(id, func(t *testing.T) {
 			tr := ftp.Tracer("test", trace.WithInstrumentationAttributes(
 				attribute.String("otelcol.component.id", id),
@@ -140,8 +140,11 @@ func TestFilteringTracerProvider_FrameworkInjection(t *testing.T) {
 		),
 	)
 
-	// An extension with component ID matching jaeger_query that does the same.
-	extType := jaegerquery.ID.Type()
+	// An extension with component ID matching test_component that does the same.
+	tracedComponents["test_component"] = struct{}{}
+	defer delete(tracedComponents, "test_component")
+
+	extType := component.MustNewType("test_component")
 	extFactory := extension.NewFactory(
 		extType,
 		func() component.Config { return &struct{}{} },
@@ -202,7 +205,7 @@ func TestFilteringTracerProvider_FrameworkInjection(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, srv.Shutdown(ctx)) })
 
 	assert.False(t, receiverGotReal.Load(), "receiver must NOT get real TracerProvider")
-	assert.True(t, extensionGotReal.Load(), "jaeger_query extension must get real TracerProvider")
+	assert.True(t, extensionGotReal.Load(), "test_component extension must get real TracerProvider")
 }
 
 type nopReceiver struct{}

@@ -37,7 +37,6 @@ import (
 	"github.com/jaegertracing/jaeger/internal/metrics"
 	es "github.com/jaegertracing/jaeger/internal/storage/elasticsearch"
 	eswrapper "github.com/jaegertracing/jaeger/internal/storage/elasticsearch/wrapper"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/api/spanstore/spanstoremetrics"
 )
 
 const (
@@ -76,9 +75,17 @@ type Indices struct {
 	Sampling     IndexOptions `mapstructure:"sampling"`
 }
 
+type bulkWriteMetrics struct {
+	Attempts   metrics.Counter
+	Inserts    metrics.Counter
+	Errors     metrics.Counter
+	LatencyOk  metrics.Timer
+	LatencyErr metrics.Timer
+}
+
 type bulkCallback struct {
 	startTimes sync.Map
-	sm         *spanstoremetrics.WriteMetrics
+	sm         *bulkWriteMetrics
 	logger     *zap.Logger
 }
 
@@ -266,6 +273,9 @@ type BasicAuthentication struct {
 
 // NewClient creates a new ElasticSearch client
 func NewClient(ctx context.Context, c *Configuration, logger *zap.Logger, metricsFactory metrics.Factory, httpAuth extensionauth.HTTPClient) (es.Client, error) {
+	if c.Version != 0 && c.Version < 8 {
+		return nil, fmt.Errorf("Elasticsearch version %d is not supported; only version 8 or above is supported", c.Version)
+	}
 	if len(c.Servers) < 1 {
 		return nil, errors.New("no servers specified")
 	}
@@ -280,7 +290,13 @@ func NewClient(ctx context.Context, c *Configuration, logger *zap.Logger, metric
 	}
 
 	bcb := bulkCallback{
-		sm:     spanstoremetrics.NewWriter(metricsFactory, "bulk_index"),
+		sm: &bulkWriteMetrics{
+			Attempts:   metricsFactory.Counter(metrics.Options{Name: "bulk_index_attempts"}),
+			Inserts:    metricsFactory.Counter(metrics.Options{Name: "bulk_index_inserts"}),
+			Errors:     metricsFactory.Counter(metrics.Options{Name: "bulk_index_errors"}),
+			LatencyOk:  metricsFactory.Timer(metrics.TimerOptions{Name: "bulk_index_latency_ok"}),
+			LatencyErr: metricsFactory.Timer(metrics.TimerOptions{Name: "bulk_index_latency_err"}),
+		},
 		logger: logger,
 	}
 
@@ -307,20 +323,8 @@ func NewClient(ctx context.Context, c *Configuration, logger *zap.Logger, metric
 		if err != nil {
 			return nil, err
 		}
-		// OpenSearch is based on ES 7.x
-		if strings.Contains(pingResult.TagLine, "OpenSearch") {
-			if pingResult.Version.Number[0] == '1' {
-				logger.Info("OpenSearch 1.x detected, using ES 7.x index mappings")
-				esVersion = 7
-			}
-			if pingResult.Version.Number[0] == '2' {
-				logger.Info("OpenSearch 2.x detected, using ES 7.x index mappings")
-				esVersion = 7
-			}
-			if pingResult.Version.Number[0] == '3' {
-				logger.Info("OpenSearch 3.x detected, using ES 7.x index mappings")
-				esVersion = 7
-			}
+		if esVersion < 8 {
+			return nil, fmt.Errorf("Elasticsearch version %d is not supported; only version 8 or above is supported", esVersion)
 		}
 		logger.Info("Elasticsearch detected", zap.Int("version", esVersion))
 		c.Version = uint(esVersion)
@@ -790,6 +794,9 @@ func GetHTTPRoundTripper(ctx context.Context, c *Configuration, logger *zap.Logg
 }
 
 func (c *Configuration) Validate() error {
+	if c.Version != 0 && c.Version < 8 {
+		return fmt.Errorf("Elasticsearch version %d is not supported; only version 8 or above is supported", c.Version)
+	}
 	_, err := govalidator.ValidateStruct(c)
 	if err != nil {
 		return err
@@ -822,4 +829,53 @@ func (c *Configuration) Validate() error {
 	}
 
 	return nil
+}
+
+// DefaultConfig returns default configuration for Elasticsearch storage.
+func DefaultConfig() Configuration {
+	replicas := int64(1)
+	return Configuration{
+		MaxSpanAge:               72 * time.Hour, // 72 hours
+		AdaptiveSamplingLookback: 72 * time.Hour, // 72 hours
+		BulkProcessing: BulkProcessing{
+			MaxBytes:      5 * 1000 * 1000,
+			Workers:       1,
+			MaxActions:    1000,
+			FlushInterval: 200 * time.Millisecond, // 200ms
+		},
+		Tags: TagsAsFields{
+			DotReplacement: "@",
+		},
+		Enabled:              true,
+		CreateIndexTemplates: true,
+		Version:              8,
+		UseReadWriteAliases:  false,
+		UseILM:               false,
+		Servers:              []string{"http://127.0.0.1:9200"},
+		RemoteReadClusters:   []string{},
+		MaxDocCount:          10000,
+		LogLevel:             "error",
+		Indices: Indices{
+			Spans: IndexOptions{
+				Shards:     5,
+				Replicas:   &replicas,
+				DateLayout: "2006-01-02",
+			},
+			Services: IndexOptions{
+				Shards:     5,
+				Replicas:   &replicas,
+				DateLayout: "2006-01-02",
+			},
+			Dependencies: IndexOptions{
+				Shards:     5,
+				Replicas:   &replicas,
+				DateLayout: "2006-01-02",
+			},
+			Sampling: IndexOptions{
+				Shards:     5,
+				Replicas:   &replicas,
+				DateLayout: "2006-01-02",
+			},
+		},
+	}
 }

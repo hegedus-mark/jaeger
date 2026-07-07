@@ -23,8 +23,6 @@ import (
 	"github.com/jaegertracing/jaeger/cmd/internal/storageconfig"
 	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerstorage"
 	"github.com/jaegertracing/jaeger/internal/jiter"
-	"github.com/jaegertracing/jaeger/internal/storage/v1"
-	factorymocks "github.com/jaegertracing/jaeger/internal/storage/v1/mocks"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore"
 	tracestoremocks "github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore/mocks"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/memory"
@@ -32,9 +30,8 @@ import (
 )
 
 type mockStorageExt struct {
-	name           string
-	factory        *tracestoremocks.Factory
-	metricsFactory *factorymocks.MetricStoreFactory
+	name    string
+	factory *tracestoremocks.Factory
 }
 
 var _ jaegerstorage.Extension = (*mockStorageExt)(nil)
@@ -52,13 +49,6 @@ func (m *mockStorageExt) TraceStorageFactory(name string) (tracestore.Factory, e
 		return m.factory, nil
 	}
 	return nil, errors.New("storage not found")
-}
-
-func (m *mockStorageExt) MetricStorageFactory(name string) (storage.MetricStoreFactory, error) {
-	if m.name == name {
-		return m.metricsFactory, nil
-	}
-	return nil, errors.New("metric storage not found")
 }
 
 func TestExporterConfigError(t *testing.T) {

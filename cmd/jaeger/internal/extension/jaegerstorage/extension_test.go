@@ -16,23 +16,14 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/configauth"
-	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/extension"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 
 	"github.com/jaegertracing/jaeger/cmd/internal/storageconfig"
-	"github.com/jaegertracing/jaeger/internal/config/promcfg"
 	escfg "github.com/jaegertracing/jaeger/internal/storage/elasticsearch/config"
-	"github.com/jaegertracing/jaeger/internal/storage/v1"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/api/metricstore"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/badger"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/cassandra"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/clickhouse"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/clickhouse/clickhousetest"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/grpc"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/memory"
 	"github.com/jaegertracing/jaeger/internal/telemetry"
 )
@@ -48,8 +39,6 @@ func (errorFactory) CreateTraceReader() (tracestore.Reader, error) {
 func (errorFactory) CreateTraceWriter() (tracestore.Writer, error) {
 	panic("not implemented")
 }
-
-func (errorFactory) CreateMetricsReader() (metricstore.Reader, error) { panic("not implemented") }
 
 func (e errorFactory) Close() error {
 	return e.closeErr
@@ -70,7 +59,7 @@ func setupMockServer(t *testing.T, response []byte, statusCode int) *httptest.Se
 func getVersionResponse(t *testing.T) []byte {
 	versionResponse, e := json.Marshal(map[string]any{
 		"Version": map[string]any{
-			"Number": "7",
+			"Number": "8.0.0",
 		},
 	})
 	require.NoError(t, e)
@@ -83,390 +72,64 @@ func TestStorageFactoryBadHostError(t *testing.T) {
 }
 
 func TestStorageFactoryBadNameError(t *testing.T) {
-	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, "foo", ""))
+	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, "foo"))
 	_, err := getStorageFactory("bar", host)
-	require.ErrorContains(t, err, "not declared")
+	require.ErrorContains(t, err, "not declared in")
 }
 
-func TestMetricsFactoryBadHostError(t *testing.T) {
-	_, err := GetMetricStorageFactory("something", componenttest.NewNopHost())
-	require.ErrorContains(t, err, "cannot find extension")
-}
-
-func TestMetricsFactoryBadNameError(t *testing.T) {
-	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, "", "foo"))
-	_, err := GetMetricStorageFactory("bar", host)
-	require.ErrorContains(t, err, "not declared")
-}
-
-func TestStorageExtensionType(t *testing.T) {
-	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, "", "foo"))
-	_, err := findExtension(host)
+func TestGetTraceStoreFactory_Memory(t *testing.T) {
+	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, "memory"))
+	factory, err := GetTraceStoreFactory("memory", host)
 	require.NoError(t, err)
+	require.NotNil(t, factory)
 }
 
-func TestStorageFactoryBadShutdownError(t *testing.T) {
-	shutdownError := errors.New("shutdown error")
-	ext := storageExt{
+func TestGetTraceStoreFactory_Elasticsearch(t *testing.T) {
+	server := setupMockServer(t, getVersionResponse(t), http.StatusOK)
+	config := storageconfig.Config{
+		TraceBackends: map[string]storageconfig.TraceBackend{
+			"es": {
+				Elasticsearch: &escfg.Configuration{
+					Servers:  []string{server.URL},
+					LogLevel: "error",
+				},
+			},
+		},
+	}
+	ext := makeStorageExtension(t, config)
+	host := storagetest.NewStorageHost().WithExtension(ID, ext)
+	err := ext.Start(t.Context(), host)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, ext.Shutdown(context.Background()))
+	})
+
+	factory, err := GetTraceStoreFactory("es", host)
+	require.NoError(t, err)
+	require.NotNil(t, factory)
+}
+
+func TestShutdownWithCloser(t *testing.T) {
+	ext := &storageExt{
 		factories: map[string]tracestore.Factory{
-			"foo": errorFactory{closeErr: shutdownError},
+			"foo": errorFactory{},
 		},
 	}
-	err := ext.Shutdown(t.Context())
-	require.ErrorIs(t, err, shutdownError)
-}
 
-func TestGetFactoryV2Error(t *testing.T) {
-	host := componenttest.NewNopHost()
-	_, err := GetTraceStoreFactory("something", host)
-	require.ErrorContains(t, err, "cannot find extension")
-}
-
-func TestGetFactory(t *testing.T) {
-	const name = "foo"
-	const metricname = "bar"
-	host := storagetest.NewStorageHost().WithExtension(ID, startStorageExtension(t, name, metricname))
-	f, err := getStorageFactory(name, host)
+	err := ext.Shutdown(context.Background())
 	require.NoError(t, err)
-	require.NotNil(t, f)
-
-	f2, err := GetTraceStoreFactory(name, host)
-	require.NoError(t, err)
-	require.NotNil(t, f2)
-
-	f3, err := GetMetricStorageFactory(metricname, host)
-	require.NoError(t, err)
-	require.NotNil(t, f3)
 }
 
-func TestGetSamplingStoreFactory(t *testing.T) {
-	tests := []struct {
-		name          string
-		storageName   string
-		expectedError string
-		setupFunc     func(t *testing.T) component.Component
-	}{
-		{
-			name:        "Supported",
-			storageName: "foo",
-			setupFunc: func(t *testing.T) component.Component {
-				traceStoreFactory := "foo"
-				return startStorageExtension(t, traceStoreFactory, "bar")
-			},
-		},
-		{
-			name:          "NotFound",
-			storageName:   "nonexistingstorage",
-			expectedError: "not declared",
-			setupFunc: func(t *testing.T) component.Component {
-				traceStoreFactory := "foo"
-				return startStorageExtension(t, traceStoreFactory, "bar")
-			},
-		},
-		{
-			name:          "NotSupported",
-			storageName:   "foo",
-			expectedError: "storage 'foo' does not support sampling store",
-			setupFunc: func(t *testing.T) component.Component {
-				versionResponse, err := json.Marshal(map[string]any{
-					"Version": map[string]any{
-						"Number": "7",
-					},
-				})
-				require.NoError(t, err)
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.Write(versionResponse)
-				}))
-				t.Cleanup(func() { server.Close() })
-
-				ext := makeStorageExtension(t, storageconfig.Config{
-					TraceBackends: map[string]storageconfig.TraceBackend{
-						"foo": {
-							Elasticsearch: &escfg.Configuration{
-								Servers:  []string{server.URL},
-								LogLevel: "error",
-							},
-						},
-					},
-				})
-				require.NoError(t, ext.Start(t.Context(), componenttest.NewNopHost()))
-				t.Cleanup(func() {
-					require.NoError(t, ext.Shutdown(context.Background()))
-				})
-				return ext
-			},
+func TestShutdownError(t *testing.T) {
+	closeErr := errors.New("close error")
+	ext := &storageExt{
+		factories: map[string]tracestore.Factory{
+			"foo": errorFactory{closeErr: closeErr},
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ext := test.setupFunc(t)
-			host := storagetest.NewStorageHost().WithExtension(ID, ext)
-
-			ssf, err := GetSamplingStoreFactory(test.storageName, host)
-			if test.expectedError != "" {
-				require.ErrorContains(t, err, test.expectedError)
-				require.Nil(t, ssf)
-			} else {
-				require.NotNil(t, ssf)
-			}
-		})
-	}
-}
-
-func TestGetPurger(t *testing.T) {
-	tests := []struct {
-		name          string
-		storageName   string
-		expectedError string
-		setupFunc     func(t *testing.T) component.Component
-	}{
-		{
-			name:        "Supported",
-			storageName: "foo",
-			setupFunc: func(t *testing.T) component.Component {
-				traceStoreFactory := "foo"
-				return startStorageExtension(t, traceStoreFactory, "bar")
-			},
-		},
-		{
-			name:          "NotFound",
-			storageName:   "nonexistingstorage",
-			expectedError: "not declared",
-			setupFunc: func(t *testing.T) component.Component {
-				traceStoreFactory := "foo"
-				return startStorageExtension(t, traceStoreFactory, "bar")
-			},
-		},
-		{
-			name:          "NotSupported",
-			storageName:   "foo",
-			expectedError: "storage 'foo' does not support purging",
-			setupFunc: func(t *testing.T) component.Component {
-				ext := makeStorageExtension(t, storageconfig.Config{
-					TraceBackends: map[string]storageconfig.TraceBackend{
-						"foo": {
-							GRPC: &grpc.Config{
-								ClientConfig: configgrpc.ClientConfig{
-									Endpoint: "localhost:12345",
-								},
-							},
-						},
-					},
-				})
-				require.NoError(t, ext.Start(t.Context(), componenttest.NewNopHost()))
-				t.Cleanup(func() {
-					require.NoError(t, ext.Shutdown(context.Background()))
-				})
-				return ext
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ext := test.setupFunc(t)
-			host := storagetest.NewStorageHost().WithExtension(ID, ext)
-
-			purger, err := GetPurger(test.storageName, host)
-			if test.expectedError != "" {
-				require.ErrorContains(t, err, test.expectedError)
-				require.Nil(t, purger)
-			} else {
-				require.NotNil(t, purger)
-			}
-		})
-	}
-}
-
-func TestBadger(t *testing.T) {
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"foo": {
-				Badger: &badger.Config{
-					Ephemeral:             true,
-					MaintenanceInterval:   5,
-					MetricsUpdateInterval: 10,
-				},
-			},
-		},
-	})
-	ctx := t.Context()
-	err := ext.Start(ctx, componenttest.NewNopHost())
-	require.NoError(t, err)
-	require.NoError(t, ext.Shutdown(ctx))
-}
-
-func TestGRPC(t *testing.T) {
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"foo": {
-				GRPC: &grpc.Config{
-					ClientConfig: configgrpc.ClientConfig{
-						Endpoint: "localhost:12345",
-					},
-				},
-			},
-		},
-	})
-	ctx := t.Context()
-	err := ext.Start(ctx, componenttest.NewNopHost())
-	require.NoError(t, err)
-	require.NoError(t, ext.Shutdown(ctx))
-}
-
-func TestMetricBackends(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-	tests := []struct {
-		name   string
-		config storageconfig.Config
-	}{
-		{
-			name: "Prometheus",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Prometheus: &storageconfig.PrometheusConfiguration{
-							Configuration: promcfg.Configuration{
-								ServerURL: mockServer.URL,
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "Elasticsearch",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Elasticsearch: &escfg.Configuration{
-							Servers:  []string{mockServer.URL},
-							LogLevel: "info",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "OpenSearch",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Opensearch: &escfg.Configuration{
-							Servers:  []string{mockServer.URL},
-							LogLevel: "info",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ext := makeStorageExtension(t, tt.config)
-			ctx := t.Context()
-			err := ext.Start(ctx, componenttest.NewNopHost())
-			require.NoError(t, err)
-			require.NoError(t, ext.Shutdown(ctx))
-		})
-	}
-}
-
-func TestMetricsBackendCloseError(t *testing.T) {
-	shutdownError := errors.New("shutdown error")
-	ext := storageExt{
-		metricsFactories: map[string]storage.MetricStoreFactory{
-			"foo": errorFactory{closeErr: shutdownError},
-		},
-	}
-	err := ext.Shutdown(t.Context())
-	require.ErrorIs(t, err, shutdownError)
-}
-
-func TestStartError(t *testing.T) {
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"foo": {},
-		},
-	})
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.ErrorContains(t, err, "invalid configuration for trace storage 'foo'")
-	require.ErrorContains(t, err, "empty configuration")
-}
-
-func TestMetricStorageStartError(t *testing.T) {
-	tests := []struct {
-		name          string
-		config        storageconfig.Config
-		expectedError string
-	}{
-		{
-			name: "Prometheus backend initialization error",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Prometheus: &storageconfig.PrometheusConfiguration{
-							Configuration: promcfg.Configuration{},
-						},
-					},
-				},
-			},
-			expectedError: "failed to initialize metrics storage 'foo'",
-		},
-		{
-			name: "Elasticsearch backend initialization error",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Elasticsearch: &escfg.Configuration{},
-					},
-				},
-			},
-			expectedError: "Servers: non zero value required",
-		},
-		{
-			name: "OpenSearch backend initialization error",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						Opensearch: &escfg.Configuration{},
-					},
-				},
-			},
-			expectedError: "Servers: non zero value required",
-		},
-		{
-			name: "ClickHouse backend initialization error",
-			config: storageconfig.Config{
-				MetricBackends: map[string]storageconfig.MetricBackend{
-					"foo": {
-						ClickHouse: &clickhouse.Configuration{},
-					},
-				},
-			},
-			expectedError: "failed to initialize metrics storage 'foo'",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ext := makeStorageExtension(t, tt.config)
-			// With lazy initialization, Start() should not fail
-			// Instead, errors occur when accessing the factory
-			err := ext.Start(t.Context(), componenttest.NewNopHost())
-			if err != nil {
-				// Some backends may fail validation during Start()
-				require.ErrorContains(t, err, tt.expectedError)
-			} else {
-				// If Start() succeeds, error should occur when accessing factory
-				storageExt := ext.(Extension)
-				_, err := storageExt.MetricStorageFactory("foo")
-				require.ErrorContains(t, err, tt.expectedError)
-			}
-		})
-	}
+	err := ext.Shutdown(context.Background())
+	require.ErrorIs(t, err, closeErr)
 }
 
 func TestElasticsearch(t *testing.T) {
@@ -485,69 +148,6 @@ func TestElasticsearch(t *testing.T) {
 	err := ext.Start(ctx, componenttest.NewNopHost())
 	require.NoError(t, err)
 	require.NoError(t, ext.Shutdown(ctx))
-}
-
-func TestOpenSearch(t *testing.T) {
-	server := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"foo": {
-				Opensearch: &escfg.Configuration{
-					Servers:  []string{server.URL},
-					LogLevel: "error",
-				},
-			},
-		},
-	})
-	ctx := t.Context()
-	err := ext.Start(ctx, componenttest.NewNopHost())
-	require.NoError(t, err)
-	require.NoError(t, ext.Shutdown(ctx))
-}
-
-func TestCassandraError(t *testing.T) {
-	// since we cannot successfully create storage factory for Cassandra
-	// without running a Cassandra server, we only test the error case.
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"cassandra": {
-				Cassandra: &cassandra.Options{},
-			},
-		},
-	})
-	// With lazy initialization, Start() should not fail
-	// Instead, errors occur when accessing the factory
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	if err != nil {
-		// Config validation may catch this during Start()
-		require.ErrorContains(t, err, "Servers: non zero value required")
-	} else {
-		// If Start() succeeds, error should occur when accessing factory
-		storageExt := ext.(Extension)
-		_, err := storageExt.TraceStorageFactory("cassandra")
-		require.ErrorContains(t, err, "failed to initialize storage 'cassandra'")
-		require.ErrorContains(t, err, "Servers: non zero value required")
-	}
-}
-
-func TestClickHouse(t *testing.T) {
-	testServer := clickhousetest.NewServer(clickhousetest.FailureConfig{})
-	t.Cleanup(testServer.Close)
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"foo": {
-				ClickHouse: &clickhouse.Configuration{
-					Protocol: "http",
-					Addresses: []string{
-						testServer.Listener.Addr().String(),
-					},
-				},
-			},
-		},
-	})
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-	require.NoError(t, ext.Shutdown(t.Context()))
 }
 
 func noopTelemetrySettings() component.TelemetrySettings {
@@ -586,34 +186,14 @@ func TestStorageBackend_DefaultCases(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "empty configuration")
-
-	config = storageconfig.Config{
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			"unconfigured": {},
-		},
-	}
-
-	ext = makeStorageExtension(t, config)
-	err = ext.Start(t.Context(), componenttest.NewNopHost())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "empty configuration")
 }
 
-func startStorageExtension(t *testing.T, memstoreName string, promstoreName string) component.Component {
+func startStorageExtension(t *testing.T, memstoreName string) component.Component {
 	config := storageconfig.Config{
 		TraceBackends: map[string]storageconfig.TraceBackend{
 			memstoreName: {
 				Memory: &memory.Configuration{
 					MaxTraces: 10000,
-				},
-			},
-		},
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			promstoreName: {
-				Prometheus: &storageconfig.PrometheusConfiguration{
-					Configuration: promcfg.Configuration{
-						ServerURL: "localhost:12345",
-					},
 				},
 			},
 		},
@@ -640,116 +220,45 @@ func TestGetAuthenticator_Success(t *testing.T) {
 	ext := newStorageExt(cfg, noopTelemetrySettings())
 
 	auth, err := ext.getAuthenticator(host, "sigv4auth")
+
 	require.NoError(t, err)
 	require.NotNil(t, auth)
+	require.Same(t, mockAuth, auth)
 }
 
-// Test authenticator not found
+// Test getAuthenticator with non-existent extension ID
 func TestGetAuthenticator_NotFound(t *testing.T) {
-	host := componenttest.NewNopHost()
-
+	host := storagetest.NewStorageHost()
 	cfg := &Config{}
 	ext := newStorageExt(cfg, noopTelemetrySettings())
 
 	auth, err := ext.getAuthenticator(host, "nonexistent")
+
 	require.Error(t, err)
 	require.Nil(t, auth)
 	require.Contains(t, err.Error(), "authenticator extension 'nonexistent' not found")
 }
 
-// Test authenticator wrong type
+// Test getAuthenticator with extension that does not implement extensionauth.HTTPClient
 func TestGetAuthenticator_WrongType(t *testing.T) {
-	mockExt := &mockNonHTTPExtension{}
+	wrongAuth := &mockNonHTTPExtension{}
 
 	host := storagetest.NewStorageHost().
-		WithExtension(component.MustNewIDWithName("wrongtype", "wrongtype"), mockExt)
+		WithExtension(component.MustNewIDWithName("wrongtype", "wrongtype"), wrongAuth)
 
 	cfg := &Config{}
 	ext := newStorageExt(cfg, noopTelemetrySettings())
 
 	auth, err := ext.getAuthenticator(host, "wrongtype")
+
 	require.Error(t, err)
 	require.Nil(t, auth)
 	require.Contains(t, err.Error(), "does not implement extensionauth.HTTPClient")
 }
 
-// Test metric backend with valid authenticator
-func TestMetricBackendWithAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-	mockAuth := &mockHTTPAuthenticator{}
+type mockHTTPAuthenticator struct{}
 
-	host := storagetest.NewStorageHost().
-		WithExtension(ID, makeStorageExtension(t, storageconfig.Config{
-			MetricBackends: map[string]storageconfig.MetricBackend{
-				"prometheus": {
-					Prometheus: &storageconfig.PrometheusConfiguration{
-						Configuration: promcfg.Configuration{
-							ServerURL: mockServer.URL,
-						},
-						Authentication: escfg.Authentication{
-							Config: configauth.Config{
-								AuthenticatorID: component.MustNewID("sigv4auth"),
-							},
-						},
-					},
-				},
-			},
-		})).
-		WithExtension(component.MustNewID("sigv4auth"), mockAuth)
-
-	ext := host.GetExtensions()[ID]
-	require.NoError(t, ext.Start(t.Context(), host))
-
-	factory, err := GetMetricStorageFactory("prometheus", host)
-	require.NoError(t, err)
-	require.NotNil(t, factory)
-
-	t.Cleanup(func() {
-		require.NoError(t, ext.(extension.Extension).Shutdown(context.Background()))
-	})
-}
-
-// Test metric backend with invalid authenticator name
-func TestMetricBackendWithInvalidAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-
-	config := storageconfig.Config{
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			"prometheus": {
-				Prometheus: &storageconfig.PrometheusConfiguration{
-					Configuration: promcfg.Configuration{
-						ServerURL: mockServer.URL,
-					},
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("sigv4auth"),
-						},
-					},
-				},
-			},
-		},
-	}
-
-	ext := makeStorageExtension(t, config)
-	// With lazy initialization, Start() should not fail
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-
-	// Error should occur when accessing factory
-	storageExt := ext.(Extension)
-	_, err = storageExt.MetricStorageFactory("prometheus")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get HTTP authenticator")
-}
-
-// Mock HTTP authenticator for testing
-type mockHTTPAuthenticator struct {
-	component.Component
-}
-
-func (*mockHTTPAuthenticator) RoundTripper(base http.RoundTripper) (http.RoundTripper, error) {
-	return &mockRoundTripper{base: base}, nil
-}
+var _ extension.Extension = (*mockHTTPAuthenticator)(nil)
 
 func (*mockHTTPAuthenticator) Start(context.Context, component.Host) error {
 	return nil
@@ -759,23 +268,13 @@ func (*mockHTTPAuthenticator) Shutdown(context.Context) error {
 	return nil
 }
 
-// Mock RoundTripper for testing
-type mockRoundTripper struct {
-	base http.RoundTripper
+func (*mockHTTPAuthenticator) RoundTripper(base http.RoundTripper) (http.RoundTripper, error) {
+	return base, nil
 }
 
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer mock-token")
-	if m.base != nil {
-		return m.base.RoundTrip(req)
-	}
-	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-}
+type mockNonHTTPExtension struct{}
 
-// Mock non-HTTP extension for testing wrong type scenario
-type mockNonHTTPExtension struct {
-	component.Component
-}
+var _ extension.Extension = (*mockNonHTTPExtension)(nil)
 
 func (*mockNonHTTPExtension) Start(context.Context, component.Host) error {
 	return nil
@@ -785,7 +284,7 @@ func (*mockNonHTTPExtension) Shutdown(context.Context) error {
 	return nil
 }
 
-// Test resolveAuthenticator helper
+// Test resolveAuthenticator
 func TestResolveAuthenticator(t *testing.T) {
 	const (
 		backendType = "elasticsearch"
@@ -902,35 +401,6 @@ func TestElasticsearchWithAuthenticator(t *testing.T) {
 	require.NoError(t, ext.Shutdown(t.Context()))
 }
 
-// Test OpenSearch with valid authenticator integration
-func TestOpenSearchWithAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-	mockAuth := &mockHTTPAuthenticator{}
-
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"opensearch": {
-				Opensearch: &escfg.Configuration{
-					Servers:  []string{mockServer.URL},
-					LogLevel: "error",
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("sigv4auth"),
-						},
-					},
-				},
-			},
-		},
-	})
-	host := storagetest.NewStorageHost().
-		WithExtension(ID, ext).
-		WithExtension(component.MustNewID("sigv4auth"), mockAuth)
-
-	err := ext.Start(t.Context(), host)
-	require.NoError(t, err)
-	require.NoError(t, ext.Shutdown(t.Context()))
-}
-
 // Test Elasticsearch with missing authenticator
 func TestElasticsearchWithMissingAuthenticator(t *testing.T) {
 	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
@@ -957,36 +427,6 @@ func TestElasticsearchWithMissingAuthenticator(t *testing.T) {
 	// Error should occur when accessing factory
 	storageExt := ext.(Extension)
 	_, err = storageExt.TraceStorageFactory("elasticsearch")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get HTTP authenticator")
-}
-
-// Test OpenSearch trace backend with missing authenticator
-func TestOpenSearchTraceWithMissingAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"opensearch": {
-				Opensearch: &escfg.Configuration{
-					Servers:  []string{mockServer.URL},
-					LogLevel: "error",
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("nonexistent"),
-						},
-					},
-				},
-			},
-		},
-	})
-	// With lazy initialization, Start() should not fail
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-
-	// Error should occur when accessing factory
-	storageExt := ext.(Extension)
-	_, err = storageExt.TraceStorageFactory("opensearch")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to get HTTP authenticator")
 }
@@ -1024,101 +464,6 @@ func TestElasticsearchWithWrongAuthenticatorType(t *testing.T) {
 	_, err = storageExt.TraceStorageFactory("elasticsearch")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not implement extensionauth.HTTPClient")
-}
-
-// Test OpenSearch with wrong authenticator type
-func TestOpenSearchWithWrongAuthenticatorType(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-	wrongAuth := &mockNonHTTPExtension{}
-
-	ext := makeStorageExtension(t, storageconfig.Config{
-		TraceBackends: map[string]storageconfig.TraceBackend{
-			"opensearch": {
-				Opensearch: &escfg.Configuration{
-					Servers:  []string{mockServer.URL},
-					LogLevel: "error",
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("wrongtype"),
-						},
-					},
-				},
-			},
-		},
-	})
-	host := storagetest.NewStorageHost().
-		WithExtension(ID, ext).
-		WithExtension(component.MustNewID("wrongtype"), wrongAuth)
-
-	// With lazy initialization, Start() should not fail
-	err := ext.Start(t.Context(), host)
-	require.NoError(t, err)
-
-	// Error should occur when accessing factory
-	storageExt := ext.(Extension)
-	_, err = storageExt.TraceStorageFactory("opensearch")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "does not implement extensionauth.HTTPClient")
-}
-
-// Test Elasticsearch metrics backend with invalid authenticator
-func TestElasticsearchMetricsWithInvalidAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-
-	ext := makeStorageExtension(t, storageconfig.Config{
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			"elasticsearch": {
-				Elasticsearch: &escfg.Configuration{
-					Servers:  []string{mockServer.URL},
-					LogLevel: "error",
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("nonexistent"),
-						},
-					},
-				},
-			},
-		},
-	})
-	// With lazy initialization, Start() should not fail
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-
-	// Error should occur when accessing factory
-	storageExt := ext.(Extension)
-	_, err = storageExt.MetricStorageFactory("elasticsearch")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get HTTP authenticator")
-}
-
-// Test OpenSearch metrics backend with invalid authenticator
-func TestOpenSearchMetricsWithInvalidAuthenticator(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-
-	ext := makeStorageExtension(t, storageconfig.Config{
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			"opensearch": {
-				Opensearch: &escfg.Configuration{
-					Servers:  []string{mockServer.URL},
-					LogLevel: "error",
-					Authentication: escfg.Authentication{
-						Config: configauth.Config{
-							AuthenticatorID: component.MustNewID("nonexistent"),
-						},
-					},
-				},
-			},
-		},
-	})
-	// With lazy initialization, Start() should not fail
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-
-	// Error should occur when accessing factory
-	storageExt := ext.(Extension)
-	_, err = storageExt.MetricStorageFactory("opensearch")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get HTTP authenticator")
 }
 
 // TestLazyInitialization tests that factories are only created when accessed
@@ -1187,59 +532,6 @@ func TestLazyInitialization(t *testing.T) {
 	// memory2 should still not be initialized
 	storageExt.factoryMu.Lock()
 	require.NotContains(t, storageExt.factories, "memory2", "memory2 should not be initialized yet")
-	storageExt.factoryMu.Unlock()
-
-	require.NoError(t, ext.Shutdown(t.Context()))
-}
-
-// TestLazyInitializationMetrics tests lazy initialization for metric storage
-func TestLazyInitializationMetrics(t *testing.T) {
-	mockServer := setupMockServer(t, getVersionResponse(t), http.StatusOK)
-
-	config := storageconfig.Config{
-		MetricBackends: map[string]storageconfig.MetricBackend{
-			"prometheus1": {
-				Prometheus: &storageconfig.PrometheusConfiguration{
-					Configuration: promcfg.Configuration{
-						ServerURL: mockServer.URL,
-					},
-				},
-			},
-			"prometheus2": {
-				Prometheus: &storageconfig.PrometheusConfiguration{
-					Configuration: promcfg.Configuration{
-						ServerURL: mockServer.URL,
-					},
-				},
-			},
-		},
-	}
-
-	ext := makeStorageExtension(t, config)
-	storageExt := ext.(*storageExt)
-
-	// Start should succeed without initializing any factories
-	err := ext.Start(t.Context(), componenttest.NewNopHost())
-	require.NoError(t, err)
-
-	// Verify no factories have been created yet
-	storageExt.factoryMu.Lock()
-	require.Empty(t, storageExt.metricsFactories, "No metric factories should be initialized after Start()")
-	storageExt.factoryMu.Unlock()
-
-	// Access prometheus1 - should initialize only that factory
-	mf1, err := storageExt.MetricStorageFactory("prometheus1")
-	require.NoError(t, err)
-	require.NotNil(t, mf1)
-
-	storageExt.factoryMu.Lock()
-	require.Len(t, storageExt.metricsFactories, 1, "Only one metric factory should be initialized")
-	require.Contains(t, storageExt.metricsFactories, "prometheus1")
-	storageExt.factoryMu.Unlock()
-
-	// prometheus2 should still not be initialized
-	storageExt.factoryMu.Lock()
-	require.NotContains(t, storageExt.metricsFactories, "prometheus2", "prometheus2 should not be initialized yet")
 	storageExt.factoryMu.Unlock()
 
 	require.NoError(t, ext.Shutdown(t.Context()))

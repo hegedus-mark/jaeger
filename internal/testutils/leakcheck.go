@@ -55,10 +55,25 @@ func ignoreHttpTransportReadLoopLeak() goleak.Option {
 	return goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop")
 }
 
+// IgnoreElasticsearchClientLeaks returns goleak options to ignore background goroutines from the Elasticsearch client.
+func IgnoreElasticsearchClientLeaks() []goleak.Option {
+	return []goleak.Option{
+		goleak.IgnoreTopFunction("github.com/olivere/elastic/v7.(*bulkWorker).work"),
+		goleak.IgnoreTopFunction("github.com/olivere/elastic/v7.(*Client).healthchecker"),
+		goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"),
+		goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	}
+}
+
 // VerifyGoLeaks verifies that unit tests do not leak any goroutines.
 // It should be called in TestMain.
 func VerifyGoLeaks(m *testing.M) {
-	goleak.VerifyTestMain(m, IgnoreGlogFlushDaemonLeak(), IgnoreOpenCensusWorkerLeak(), IgnoreGoMetricsMeterLeak())
+	opts := append(
+		[]goleak.Option{IgnoreGlogFlushDaemonLeak(), IgnoreOpenCensusWorkerLeak(), IgnoreGoMetricsMeterLeak()},
+		IgnoreElasticsearchClientLeaks()...,
+	)
+	goleak.VerifyTestMain(m, opts...)
 }
 
 // VerifyGoLeaksOnce verifies that a given unit test does not leak any goroutines.
@@ -68,7 +83,11 @@ func VerifyGoLeaks(m *testing.M) {
 //
 //	defer testutils.VerifyGoLeaksOnce(t)
 func VerifyGoLeaksOnce(t *testing.T) {
-	goleak.VerifyNone(t, IgnoreGlogFlushDaemonLeak(), IgnoreOpenCensusWorkerLeak(), IgnoreGoMetricsMeterLeak())
+	opts := append(
+		[]goleak.Option{IgnoreGlogFlushDaemonLeak(), IgnoreOpenCensusWorkerLeak(), IgnoreGoMetricsMeterLeak()},
+		IgnoreElasticsearchClientLeaks()...,
+	)
+	goleak.VerifyNone(t, opts...)
 }
 
 // VerifyGoLeaksOnceForES is go leak check for ElasticSearch integration tests (v1)

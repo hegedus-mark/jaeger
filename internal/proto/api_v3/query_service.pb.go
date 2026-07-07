@@ -1160,10 +1160,10 @@ func (m *GRPCGatewayError_GRPCGatewayErrorDetails) GetHttpStatus() string {
 // In case of errors, GRPCGatewayError above is used.
 //
 // Example:
-//     {"result": {"resourceSpans": ...}}
+//
+//	{"result": {"resourceSpans": ...}}
 //
 // See https://github.com/grpc-ecosystem/grpc-gateway/issues/2189
-//
 type GRPCGatewayWrapper struct {
 	Result               *v1.TracesData `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}       `json:"-"`

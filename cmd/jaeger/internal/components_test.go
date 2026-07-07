@@ -28,8 +28,8 @@ func TestComponents(t *testing.T) {
 	assert.NotNil(t, factories.Processors)
 	assert.NotNil(t, factories.Connectors)
 
-	_, jaegerReceiverFactoryExists := factories.Receivers[component.MustNewType("jaeger")]
-	assert.True(t, jaegerReceiverFactoryExists)
+	_, otlpReceiverFactoryExists := factories.Receivers[component.MustNewType("otlp")]
+	assert.True(t, otlpReceiverFactoryExists)
 }
 
 func TestGetOtelcolFactories(t *testing.T) {

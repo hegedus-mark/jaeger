@@ -4,12 +4,8 @@
 package memory
 
 import (
-	"context"
-
 	"github.com/jaegertracing/jaeger/internal/distributedlock"
 	"github.com/jaegertracing/jaeger/internal/metrics"
-	"github.com/jaegertracing/jaeger/internal/storage/v1"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/api/samplingstore"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/depstore"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore/tracestoremetrics"
@@ -17,9 +13,7 @@ import (
 )
 
 var (
-	_ tracestore.Factory           = (*Factory)(nil)
-	_ storage.SamplingStoreFactory = (*Factory)(nil)
-	_ storage.Purger               = (*Factory)(nil)
+	_ tracestore.Factory = (*Factory)(nil)
 )
 
 type Factory struct {
@@ -50,14 +44,6 @@ func (f *Factory) CreateDependencyReader() (depstore.Reader, error) {
 	return f.store, nil
 }
 
-func (*Factory) CreateSamplingStore(buckets int) (samplingstore.Store, error) {
-	return NewSamplingStore(buckets), nil
-}
-
 func (*Factory) CreateLock() (distributedlock.Lock, error) {
 	return &Lock{}, nil
-}
-
-func (f *Factory) Purge(_ context.Context) error {
-	return f.store.Purge()
 }

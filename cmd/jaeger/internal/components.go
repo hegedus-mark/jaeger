@@ -5,18 +5,12 @@ package internal
 
 import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/basicauthextension"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckv2extension"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/pprofextension"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/sigv4authextension"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/attributesprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/tailsamplingprocessor"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/jaegerreceiver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/kafkareceiver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/zipkinreceiver"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/connector/forwardconnector"
@@ -37,14 +31,7 @@ import (
 	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
 
 	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/exporters/storageexporter"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/expvar"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegermcp"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerquery"
 	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerstorage"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/remotesampling"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/remotestorage"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/integration/storagecleaner"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/processors/adaptivesampling"
 )
 
 type builders struct {
@@ -79,15 +66,7 @@ func (b builders) build() (otelcol.Factories, error) {
 
 		// add-ons
 		basicauthextension.NewFactory(),
-		sigv4authextension.NewFactory(),
-		jaegermcp.NewFactory(),
-		jaegerquery.NewFactory(),
 		jaegerstorage.NewFactory(),
-		remotesampling.NewFactory(),
-		expvar.NewFactory(),
-		// only for e2e testing
-		storagecleaner.NewFactory(),
-		remotestorage.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
@@ -97,10 +76,6 @@ func (b builders) build() (otelcol.Factories, error) {
 		// standard
 		otlpreceiver.NewFactory(),
 		nopreceiver.NewFactory(),
-		// add-ons
-		jaegerreceiver.NewFactory(),
-		kafkareceiver.NewFactory(),
-		zipkinreceiver.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
@@ -114,9 +89,6 @@ func (b builders) build() (otelcol.Factories, error) {
 		nopexporter.NewFactory(),
 		// add-ons
 		storageexporter.NewFactory(), // generic exporter to Jaeger v1 spanstore.SpanWriter
-		kafkaexporter.NewFactory(),
-		prometheusexporter.NewFactory(),
-		// elasticsearch.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
@@ -129,8 +101,6 @@ func (b builders) build() (otelcol.Factories, error) {
 		tailsamplingprocessor.NewFactory(),
 		attributesprocessor.NewFactory(),
 		filterprocessor.NewFactory(),
-		// add-ons
-		adaptivesampling.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err

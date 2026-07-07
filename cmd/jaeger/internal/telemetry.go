@@ -13,8 +13,6 @@ import (
 	"go.opentelemetry.io/otel/trace/embedded"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegermcp"
-	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerquery"
 	"github.com/jaegertracing/jaeger/internal/jtracer"
 )
 
@@ -22,10 +20,7 @@ import (
 // the real TracerProvider. All other components (receivers, processors, exporters,
 // connectors, and unlisted extensions) get a noop tracer, preventing recursive
 // self-tracing loops when Jaeger's OTLP receiver is the export destination.
-var tracedComponents = map[string]struct{}{
-	jaegerquery.ID.String(): {},
-	jaegermcp.ID.String():   {},
-}
+var tracedComponents = map[string]struct{}{}
 
 var componentIDKey = attribute.Key("otelcol.component.id")
 

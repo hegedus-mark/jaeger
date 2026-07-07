@@ -18,8 +18,8 @@ import (
 
 var mockEsServerResponse = []byte(`
 {
-	"Version": {
-		"Number": "6"
+	"version": {
+		"number": "8"
 	}
 }
 `)

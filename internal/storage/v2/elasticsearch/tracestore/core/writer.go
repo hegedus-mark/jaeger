@@ -15,7 +15,6 @@ import (
 	es "github.com/jaegertracing/jaeger/internal/storage/elasticsearch"
 	cfg "github.com/jaegertracing/jaeger/internal/storage/elasticsearch/config"
 	"github.com/jaegertracing/jaeger/internal/storage/elasticsearch/indices"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/api/spanstore/spanstoremetrics"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/elasticsearch/tracestore/core/dbmodel"
 )
 
@@ -28,12 +27,16 @@ const (
 
 type serviceWriter func(string, *dbmodel.Span)
 
+type WriteMetrics struct {
+	Attempts metrics.Counter
+}
+
 // SpanWriter is a wrapper around elastic.Client
 type SpanWriter struct {
 	client func() es.Client
 	logger *zap.Logger
 	// indexCache       cache.Cache
-	writerMetrics     *spanstoremetrics.WriteMetrics
+	writerMetrics     *WriteMetrics
 	serviceWriter     serviceWriter
 	spanServiceIndex  spanAndServiceIndexFn
 	allTagsAsFields   bool
@@ -92,7 +95,7 @@ func NewSpanWriter(p SpanWriterParams) *SpanWriter {
 	return &SpanWriter{
 		client:            p.Client,
 		logger:            p.Logger,
-		writerMetrics:     spanstoremetrics.NewWriter(p.MetricsFactory, "spans"),
+		writerMetrics:     &WriteMetrics{Attempts: p.MetricsFactory.Counter(metrics.Options{Name: "span_write_attempts"})},
 		serviceWriter:     serviceOperationStorage.Write,
 		spanServiceIndex:  getSpanAndServiceIndexFn(p, writeAliasSuffix),
 		tagKeysAsFields:   tags,

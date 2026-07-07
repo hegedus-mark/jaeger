@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/confmap"
 
-	escfg "github.com/jaegertracing/jaeger/internal/storage/elasticsearch/config"
-	"github.com/jaegertracing/jaeger/internal/storage/v1/badger"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/memory"
 )
 
@@ -67,47 +65,6 @@ func TestConfigValidate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "trace storage 'empty': empty configuration",
 		},
-		{
-			name: "valid metric backend",
-			config: Config{
-				TraceBackends: map[string]TraceBackend{
-					"memory": {Memory: &memory.Configuration{}},
-				},
-				MetricBackends: map[string]MetricBackend{
-					"prometheus": {Prometheus: &PrometheusConfiguration{}},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "invalid trace backend",
-			config: Config{
-				TraceBackends: map[string]TraceBackend{
-					"invalid": {
-						Memory: &memory.Configuration{},
-						Badger: &badger.Config{},
-					},
-				},
-			},
-			expectError: true,
-			errorMsg:    "trace storage 'invalid': multiple backend types found",
-		},
-		{
-			name: "invalid metric backend",
-			config: Config{
-				TraceBackends: map[string]TraceBackend{
-					"memory": {Memory: &memory.Configuration{}},
-				},
-				MetricBackends: map[string]MetricBackend{
-					"invalid": {
-						Prometheus:    &PrometheusConfiguration{},
-						Elasticsearch: &escfg.Configuration{},
-					},
-				},
-			},
-			expectError: true,
-			errorMsg:    "metric storage 'invalid': multiple backend types found",
-		},
 	}
 
 	for _, tt := range tests {
@@ -155,45 +112,6 @@ func TestTraceBackendUnmarshal(t *testing.T) {
 			},
 		},
 		{
-			name: "badger backend with defaults",
-			configMap: map[string]any{
-				"badger": map[string]any{
-					"ephemeral": true,
-				},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, tb *TraceBackend) {
-				require.NotNil(t, tb.Badger)
-				assert.True(t, tb.Badger.Ephemeral)
-			},
-		},
-		{
-			name: "grpc backend with defaults",
-			configMap: map[string]any{
-				"grpc": map[string]any{
-					"endpoint": "localhost:17271",
-				},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, tb *TraceBackend) {
-				require.NotNil(t, tb.GRPC)
-				assert.Equal(t, "localhost:17271", tb.GRPC.ClientConfig.Endpoint)
-			},
-		},
-		{
-			name: "cassandra backend with defaults",
-			configMap: map[string]any{
-				"cassandra": map[string]any{},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, tb *TraceBackend) {
-				require.NotNil(t, tb.Cassandra)
-				assert.True(t, tb.Cassandra.Index.Tags)
-				assert.True(t, tb.Cassandra.Index.ProcessTags)
-				assert.True(t, tb.Cassandra.Index.Logs)
-			},
-		},
-		{
 			name: "elasticsearch backend with defaults",
 			configMap: map[string]any{
 				"elasticsearch": map[string]any{},
@@ -201,16 +119,6 @@ func TestTraceBackendUnmarshal(t *testing.T) {
 			expectError: false,
 			validateFunc: func(t *testing.T, tb *TraceBackend) {
 				require.NotNil(t, tb.Elasticsearch)
-			},
-		},
-		{
-			name: "opensearch backend with defaults",
-			configMap: map[string]any{
-				"opensearch": map[string]any{},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, tb *TraceBackend) {
-				require.NotNil(t, tb.Opensearch)
 			},
 		},
 	}
@@ -241,16 +149,6 @@ func TestMetricBackendUnmarshal(t *testing.T) {
 		validateFunc func(*testing.T, *MetricBackend)
 	}{
 		{
-			name: "prometheus backend with defaults",
-			configMap: map[string]any{
-				"prometheus": map[string]any{},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, mb *MetricBackend) {
-				require.NotNil(t, mb.Prometheus)
-			},
-		},
-		{
 			name: "elasticsearch backend",
 			configMap: map[string]any{
 				"elasticsearch": map[string]any{},
@@ -258,26 +156,6 @@ func TestMetricBackendUnmarshal(t *testing.T) {
 			expectError: false,
 			validateFunc: func(t *testing.T, mb *MetricBackend) {
 				require.NotNil(t, mb.Elasticsearch)
-			},
-		},
-		{
-			name: "opensearch backend",
-			configMap: map[string]any{
-				"opensearch": map[string]any{},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, mb *MetricBackend) {
-				require.NotNil(t, mb.Opensearch)
-			},
-		},
-		{
-			name: "clickhouse backend",
-			configMap: map[string]any{
-				"clickhouse": map[string]any{},
-			},
-			expectError: false,
-			validateFunc: func(t *testing.T, mb *MetricBackend) {
-				require.NotNil(t, mb.ClickHouse)
 			},
 		},
 	}
@@ -327,29 +205,6 @@ func TestTraceBackendExclusive(t *testing.T) {
 				require.NoError(t, err)
 
 				err = tb.Validate()
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "multiple backend types found")
-			})
-		}
-	}
-}
-
-func TestMetricBackendExclusive(t *testing.T) {
-	keys := getStorageKeys(reflect.TypeFor[MetricBackend]())
-	for i := range keys {
-		for j := i + 1; j < len(keys); j++ {
-			key1 := keys[i]
-			key2 := keys[j]
-			t.Run(fmt.Sprintf("%s+%s", key1, key2), func(t *testing.T) {
-				conf := confmap.NewFromStringMap(map[string]any{
-					key1: map[string]any{},
-					key2: map[string]any{},
-				})
-				var mb MetricBackend
-				err := mb.Unmarshal(conf)
-				require.NoError(t, err)
-
-				err = mb.Validate()
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "multiple backend types found")
 			})

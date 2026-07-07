@@ -53,39 +53,6 @@ backends:
 	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].Memory.MaxTraces)
 }
 
-func TestConfigDefaultBadger(t *testing.T) {
-	conf := loadConf(t, `
-backends:
-  some_storage:
-    badger:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].Badger.TTL.Spans)
-}
-
-func TestConfigDefaultGRPC(t *testing.T) {
-	conf := loadConf(t, `
-backends:
-  some_storage:
-    grpc:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].GRPC.Timeout)
-}
-
-func TestConfigDefaultCassandra(t *testing.T) {
-	conf := loadConf(t, `
-backends:
-  some_storage:
-    cassandra:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].Cassandra.Configuration.Connection.Servers)
-}
-
 func TestConfigDefaultElasticsearch(t *testing.T) {
 	conf := loadConf(t, `
 backends:
@@ -97,28 +64,6 @@ backends:
 	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].Elasticsearch.Servers)
 }
 
-func TestConfigDefaultOpensearch(t *testing.T) {
-	conf := loadConf(t, `
-backends:
-  some_storage:
-    opensearch:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.TraceBackends["some_storage"].Opensearch.Servers)
-}
-
-func TestConfigDefaultPrometheus(t *testing.T) {
-	conf := loadConf(t, `
-metric_backends:
-  some_metrics_storage:
-    prometheus:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.MetricBackends["some_metrics_storage"].Prometheus.Configuration.ServerURL)
-}
-
 func TestConfigDefaultElasticsearchAsMetricsBackend(t *testing.T) {
 	conf := loadConf(t, `
 metric_backends:
@@ -128,29 +73,4 @@ metric_backends:
 	cfg := createDefaultConfig().(*Config)
 	require.NoError(t, conf.Unmarshal(cfg))
 	assert.NotEmpty(t, cfg.MetricBackends["some_metrics_storage"].Elasticsearch.Servers)
-}
-
-func TestConfigDefaultOpenSearchAsMetricsBackend(t *testing.T) {
-	conf := loadConf(t, `
-metric_backends:
-  some_metrics_storage:
-    opensearch:
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	assert.NotEmpty(t, cfg.MetricBackends["some_metrics_storage"].Opensearch.Servers)
-}
-
-func TestConfigDefaultClickHouseAsMetricsBackend(t *testing.T) {
-	conf := loadConf(t, `
-metric_backends:
-  some_metrics_storage:
-    clickhouse:
-      addresses:
-        - localhost:9000
-`)
-	cfg := createDefaultConfig().(*Config)
-	require.NoError(t, conf.Unmarshal(cfg))
-	require.NotNil(t, cfg.MetricBackends["some_metrics_storage"].ClickHouse)
-	assert.NotEmpty(t, cfg.MetricBackends["some_metrics_storage"].ClickHouse.Addresses)
 }

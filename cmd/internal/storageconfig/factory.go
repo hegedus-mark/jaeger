@@ -13,11 +13,7 @@ import (
 	"github.com/jaegertracing/jaeger/internal/metrics"
 	escfg "github.com/jaegertracing/jaeger/internal/storage/elasticsearch/config"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/badger"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/cassandra"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/clickhouse"
 	es "github.com/jaegertracing/jaeger/internal/storage/v2/elasticsearch"
-	"github.com/jaegertracing/jaeger/internal/storage/v2/grpc"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/memory"
 	"github.com/jaegertracing/jaeger/internal/telemetry"
 )
@@ -53,12 +49,6 @@ func CreateTraceStorageFactory(
 	switch {
 	case backend.Memory != nil:
 		factory, err = memory.NewFactory(*backend.Memory, telset)
-	case backend.Badger != nil:
-		factory, err = badger.NewFactory(*backend.Badger, telset)
-	case backend.GRPC != nil:
-		factory, err = grpc.NewFactory(ctx, *backend.GRPC, telset)
-	case backend.Cassandra != nil:
-		factory, err = cassandra.NewFactory(*backend.Cassandra, telset)
 	case backend.Elasticsearch != nil:
 		var httpAuth extensionauth.HTTPClient
 		if authResolver != nil {
@@ -68,17 +58,6 @@ func CreateTraceStorageFactory(
 			}
 		}
 		factory, err = es.NewFactory(ctx, *backend.Elasticsearch, telset, httpAuth)
-	case backend.Opensearch != nil:
-		var httpAuth extensionauth.HTTPClient
-		if authResolver != nil {
-			httpAuth, err = authResolver(backend.Opensearch.Authentication, "opensearch", name)
-			if err != nil {
-				return nil, err
-			}
-		}
-		factory, err = es.NewFactory(ctx, *backend.Opensearch, telset, httpAuth)
-	case backend.ClickHouse != nil:
-		factory, err = clickhouse.NewFactory(ctx, *backend.ClickHouse, telset)
 	default:
 		err = errors.New("empty configuration")
 	}
