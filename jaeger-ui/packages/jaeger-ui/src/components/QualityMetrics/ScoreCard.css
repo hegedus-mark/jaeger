@@ -1,0 +1,21 @@
+/*
+Copyright (c) 2020 The Jaeger Authors.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+.ScoreCard {
+  margin: 10px;
+  max-width: 25%;
+  min-width: 180px;
+  text-align: center;
+}
+
+.ScoreCard--CircularProgressbarWrapper {
+  padding: 3px;
+}
+
+.ScoreCard--TitleHeader {
+  border-bottom: solid 1px var(--border-default);
+  box-shadow: var(--shadow-sm);
+  font-size: 1.8em;
+}

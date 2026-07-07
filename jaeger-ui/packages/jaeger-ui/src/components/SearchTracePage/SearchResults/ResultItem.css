@@ -1,0 +1,22 @@
+/*
+Copyright (c) 2017 Uber Technologies, Inc.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+.ResultItem {
+  border: 1px solid var(--border-default);
+  background: var(--surface-tertiary);
+}
+
+.ResultItem:hover {
+  background: var(--surface-secondary);
+  border-color: var(--border-strong);
+}
+
+.ResultItem--warningIcon {
+  color: var(--feedback-warning);
+  font-size: 0.95em;
+  margin-right: 0.25rem;
+  margin-top: -0.2em;
+  vertical-align: middle;
+}

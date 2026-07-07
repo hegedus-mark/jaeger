@@ -1,0 +1,80 @@
+version: "2"
+run:
+  go: "1.23"
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - depguard
+    - durationcheck
+    - errname
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - perfsprint
+    - revive
+    - testifylint
+    - usestdlibvars
+  disable:
+    - errcheck
+  settings:
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+            - github.com/gogo/protobuf
+            - github.com/jaegertracing/jaeger-idl
+            - go.uber.org/goleak
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+          - gosec
+          - noctx
+        path: _test\.go
+      - linters:
+          - gocritic
+        text: dupArg
+      - linters:
+          - gocritic
+        text: exitAfterDefer
+      - linters:
+          - gocritic
+        text: appendAssign
+    paths:
+      - .*.pb.go$
+      - proto-gen/.*
+      - model/v1/prototest/.*
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - .*.pb.go$
+      - proto-gen/.*
+      - model/v1/prototest/.*

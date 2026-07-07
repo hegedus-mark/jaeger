@@ -1,0 +1,144 @@
+// Copyright (c) 2021 The Jaeger Authors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { ApiError } from './api-error';
+
+type AvailableServiceMetrics = 'service_call_rate' | 'service_latencies' | 'service_error_rate';
+type AvailableOpsMetrics =
+  | 'service_operation_call_rate'
+  | 'service_operation_latencies'
+  | 'service_operation_error_rate';
+
+export type spanKinds = 'unspecified' | 'internal' | 'server' | 'client' | 'producer' | 'consumer';
+
+export type MetricsAPIQueryParams = {
+  quantile: number;
+  groupByOperation?: boolean;
+  endTs: number;
+  lookback: number;
+  step: number;
+  ratePer: number;
+  spanKind: spanKinds;
+};
+
+type LableObject = {
+  name: string;
+  value: string;
+};
+
+export type MetricPointObject = {
+  gaugeValue: {
+    doubleValue: number;
+  };
+  timestamp: string;
+};
+
+export type MetricObject = {
+  labels: LableObject[];
+  metricPoints: MetricPointObject[];
+};
+
+type MetricsAPIServiceResponseData<T = AvailableServiceMetrics, U = 0.95> = {
+  name: T;
+  type: 'GAUGE';
+  help: string;
+  metrics: MetricObject[];
+  quantile: U;
+};
+
+type MetricsAPIOpsResponseData<T = AvailableOpsMetrics> = {
+  name: T;
+  type: 'GAUGE';
+  help: string;
+  metrics: MetricObject[];
+  quantile: number;
+};
+
+export type Points = {
+  x: number;
+  y: number | null;
+};
+
+type DataAvg = {
+  service_operation_call_rate: null | number;
+  service_operation_error_rate: null | number;
+  service_operation_latencies: null | number;
+};
+
+export type OpsDataPoints = {
+  service_operation_call_rate: Points[];
+  service_operation_error_rate: Points[];
+  service_operation_latencies: Points[];
+  avg: DataAvg;
+};
+
+export type ServiceOpsMetrics = {
+  dataPoints: OpsDataPoints;
+  errRates: number;
+  impact: number;
+  latency: number;
+  name: string;
+  requests: number;
+  key: number;
+};
+
+export type ServiceMetricsObject = {
+  serviceName: string;
+  quantile: number;
+  max: number;
+  metricPoints: Points[];
+};
+
+export type ServiceMetrics = {
+  service_latencies: null | ServiceMetricsObject[];
+  service_call_rate: null | ServiceMetricsObject;
+  service_error_rate: null | ServiceMetricsObject;
+};
+
+export type MetricsReduxState = {
+  serviceError: {
+    service_latencies_50: null | ApiError;
+    service_latencies_75: null | ApiError;
+    service_latencies_95: null | ApiError;
+    service_call_rate: null | ApiError;
+    service_error_rate: null | ApiError;
+  };
+  opsError: {
+    opsLatencies: null | ApiError;
+    opsCalls: null | ApiError;
+    opsErrors: null | ApiError;
+  };
+  loading: boolean;
+  operationMetricsLoading: undefined | boolean;
+  serviceMetrics: ServiceMetrics | null;
+  serviceOpsMetrics: ServiceOpsMetrics[] | undefined;
+};
+
+enum PromiseStatus {
+  fulfilled = 'fulfilled',
+  rejected = 'rejected',
+}
+
+type PromiseFulfilledResult<T> = {
+  status: PromiseStatus.fulfilled;
+  value: T;
+};
+
+export type PromiseRejectedResult = {
+  status: PromiseStatus.rejected;
+  reason: ApiError;
+};
+
+export type FetchedAllServiceMetricsResponse = [
+  PromiseFulfilledResult<MetricsAPIServiceResponseData<'service_latencies', 0.5>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIServiceResponseData<'service_latencies', 0.75>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIServiceResponseData<'service_latencies'>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIServiceResponseData<'service_call_rate'>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIServiceResponseData<'service_error_rate'>> | PromiseRejectedResult,
+];
+
+export type FetchAggregatedServiceMetricsResponse = [
+  PromiseFulfilledResult<MetricsAPIOpsResponseData<'service_operation_latencies'>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIOpsResponseData<'service_operation_call_rate'>> | PromiseRejectedResult,
+  PromiseFulfilledResult<MetricsAPIOpsResponseData<'service_operation_error_rate'>> | PromiseRejectedResult,
+];

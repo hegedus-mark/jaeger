@@ -1,0 +1,17 @@
+// Copyright (c) 2019 Uber Technologies, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+{
+  "extends": "../../tsconfig",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "isolatedModules": false,
+    "noEmit": true,
+    "types": ["vitest/globals", "node"],
+    "paths": {
+      "@jaegertracing/plexus": ["../plexus/src/index.ts"],
+      "@jaegertracing/plexus/lib/*": ["../plexus/src/*"]
+    }
+  },
+  "include": ["src/**/*.tsx", "src/**/*.ts", "src/**/*.json", "typings", "index.test.ts"]
+}

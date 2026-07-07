@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":gitSignOff"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ]
+  },
+  "labels": [
+    "changelog:dependencies"
+  ],
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
+  "suppressNotifications": [
+    "prEditedNotification"
+  ],
+  "packageRules": [
+    {
+      "groupName": "Disable minor updates for all dependencies",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "enabled": false
+    },
+    {
+      "groupName": "All Protobuf/gRPC packages",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchSourceUrls": [
+        "google.golang.org{/,}**",
+        "github.com/gogo/{/,}**"
+      ],
+      "schedule": [
+        "on the first day of the month"
+      ]
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions deps",
+      "schedule": [
+        "on the first day of the month"
+      ]
+    }
+  ]
+}

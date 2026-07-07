@@ -1,0 +1,108 @@
+/*
+Copyright (c) 2017 Uber Technologies, Inc.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+.TraceTimelineViewer {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.TraceTimelineViewer--sidePanelLayout {
+  align-items: flex-start;
+  display: flex;
+  position: relative;
+}
+
+.TraceTimelineViewer--main {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.TraceTimelineViewer--sidePanel {
+  /* Fixed so the panel never scrolls with the timeline.
+     top and height are set via inline style after measuring the container offset. */
+  border-left: 1px solid var(--border-default);
+  overflow-y: auto;
+  position: fixed;
+  right: 0;
+}
+
+/* Show a permanent column divider for all VerticalResizers within the trace timeline,
+   scoped to avoid affecting other VerticalResizer usages (e.g. Deep Dependencies panel). */
+.TraceTimelineViewer .VerticalResizer--dragger {
+  border-left-color: var(--border-default);
+}
+
+.json-markup {
+  line-height: 17px;
+  font-size: 13px;
+  font-family: monospace;
+
+  white-space: pre-wrap;
+
+  word-break: break-all;
+  word-wrap: break-word;
+}
+
+.json-markup-key {
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+.json-markup-bool {
+  color: var(--syntax-bool);
+}
+
+.json-markup-string {
+  color: var(--syntax-string);
+}
+
+.json-markup-null,
+.json-markup-undefined {
+  color: var(--syntax-null);
+}
+
+.json-markup-number {
+  color: var(--syntax-number);
+}
+
+.json-markup-other {
+  color: lightgrey;
+}
+
+.json-markup-icon-expand {
+  margin-right: 4px;
+}
+
+.json-markup-icon-expand::after {
+  content: '\25B6';
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.json-markup-icon-collapse {
+  margin-right: 4px;
+}
+
+.json-markup-icon-collapse::after {
+  content: '\25BC';
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.json-markup-collapse-content::after {
+  content: '\2026';
+  color: var(--text-primary);
+  font-size: 18px;
+  margin-right: 4px;
+}
+
+.json-markup-child {
+  margin: 0.25rem;
+  width: 100%;
+  padding: 0;
+}
+
+.json-markup-punctuation {
+  font-weight: bold;
+}

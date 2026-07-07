@@ -1,0 +1,8 @@
+.idea/
+.fmt.log
+.import.log
+.proto-gen-polyglot/
+.thrift-gen-polyglot/
+.scripts/
+.tools/
+coverage.txt

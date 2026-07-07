@@ -1,0 +1,48 @@
+/*
+Copyright (c) 2020 The Jaeger Authors.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+.MetricCard {
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  display: flex;
+  margin: 5px 5%;
+}
+
+.MetricCard--Body {
+  border-left: solid 1px var(--border-default);
+  box-shadow: var(--shadow-sm);
+  flex-grow: 1;
+  padding: 5px;
+  text-align: center;
+}
+
+.MetricCard--CircularProgressbarWrapper {
+  flex-shrink: 0;
+  max-width: 180px;
+  padding: 5px;
+  width: 25%;
+}
+
+.MetricCard--CountsWrapper {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+}
+
+.MetricCard--Description {
+  margin: 0 auto;
+  width: 60%;
+}
+
+.MetricCard--Details {
+  text-align: left;
+  padding: 0.3em;
+}
+
+.MetricCard--TitleHeader {
+  border-bottom: solid 1px var(--border-default);
+  box-shadow: var(--shadow-sm);
+  font-size: 1.5em;
+}

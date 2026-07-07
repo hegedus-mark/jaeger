@@ -1,0 +1,48 @@
+/*
+Copyright (c) 2017 Uber Technologies, Inc.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+.SearchResults {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.SearchResults--header {
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.SearchResults--headerOverview {
+  align-items: center;
+  background-color: var(--surface-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0.5rem 1rem;
+}
+
+.SearchResults--headerScatterPlot {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.SearchResults--resultLink {
+  color: inherit;
+}
+
+.SearchResults--resultLink:hover {
+  color: inherit;
+}
+
+.SearchResults--ddg-container {
+  border: var(--border-default) 1px solid;
+  flex-grow: 1;
+  position: relative;
+}
+
+.SearchResults--resultCount {
+  font-size: 1rem;
+}

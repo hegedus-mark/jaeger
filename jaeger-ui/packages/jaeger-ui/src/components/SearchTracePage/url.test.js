@@ -1,0 +1,301 @@
+// Copyright (c) 2020 The Jaeger Authors.
+// SPDX-License-Identifier: Apache-2.0
+
+import * as ReactRouterDom from 'react-router-dom';
+
+import { MAX_LENGTH } from '../DeepDependencies/Graph/DdgNodeContent/constants';
+import { ROUTE_PATH, getUrl, getUrlState, isSameQuery, matches, searchQueryFromUrl } from './url';
+
+vi.mock('react-router-dom', () => ({
+  matchPath: vi.fn(),
+}));
+
+describe('SearchTracePage/url', () => {
+  const span0 = 'span-0';
+  const span1 = 'span-1';
+  const span2 = 'span-2';
+  const trace0 = 'trace-0';
+  const trace1 = 'trace-1';
+  const trace2 = 'trace-2';
+
+  describe('matches', () => {
+    const path = 'path argument';
+
+    beforeEach(() => {
+      ReactRouterDom.matchPath.mockReset();
+    });
+
+    it('calls matchPath with expected arguments', () => {
+      matches(path);
+      expect(ReactRouterDom.matchPath).toHaveBeenLastCalledWith(ROUTE_PATH, path);
+    });
+
+    it("returns truthiness of matchPath's return value", () => {
+      ReactRouterDom.matchPath.mockReturnValueOnce(null);
+      expect(matches(path)).toBe(false);
+      ReactRouterDom.matchPath.mockReturnValueOnce({});
+      expect(matches(path)).toBe(true);
+    });
+  });
+
+  describe('getUrl', () => {
+    it('handles no args given', () => {
+      expect(getUrl()).toBe('/search');
+    });
+
+    it('handles empty args', () => {
+      expect(getUrl({})).toBe('/search?');
+    });
+
+    it('includes provided args', () => {
+      const paramA = 'aParam';
+      const paramB = 'bParam';
+      expect(getUrl({ paramA, paramB })).toBe(`/search?paramA=${paramA}&paramB=${paramB}`);
+    });
+
+    it('preserves traceID without spanLinks', () => {
+      expect(
+        getUrl({
+          traceID: trace0,
+        })
+      ).toBe(`/search?traceID=${trace0}`);
+    });
+
+    it('converts spanLink and its traceID to just span', () => {
+      expect(
+        getUrl({
+          traceID: trace0,
+          spanLinks: {
+            [trace0]: span0,
+          },
+        })
+      ).toBe(`/search?span=${span0}%40${trace0}`);
+    });
+
+    it('handles missing traceID for spanLinks', () => {
+      expect(
+        getUrl({
+          spanLinks: {
+            [trace0]: span0,
+          },
+        })
+      ).toBe(`/search?span=${span0}%40${trace0}`);
+    });
+
+    it('handles empty spanLinks', () => {
+      expect(
+        getUrl({
+          spanLinks: {},
+        })
+      ).toBe(`/search?`);
+    });
+
+    it('converts spanLink and other traceID to traceID and span', () => {
+      expect(
+        getUrl({
+          traceID: [trace0, trace2],
+          spanLinks: {
+            [trace0]: span0,
+          },
+        })
+      ).toBe(`/search?span=${span0}%40${trace0}&traceID=${trace2}`);
+    });
+
+    it('converts spanLinks to traceID and span', () => {
+      expect(
+        getUrl({
+          traceID: [trace0, trace1, trace2],
+          spanLinks: {
+            [trace0]: `${span0} ${span1}`,
+            [trace1]: span2,
+          },
+        })
+      ).toBe(`/search?span=${span0}%20${span1}%40${trace0}&span=${span2}%40${trace1}&traceID=${trace2}`);
+    });
+
+    describe('too long urls', () => {
+      const oneID = getUrl({
+        traceID: trace0,
+      });
+      const lengthBeforeArgs = oneID.indexOf('?');
+      const lengthOfOneArg = oneID.length - lengthBeforeArgs;
+      const maxLengthOfArgs = MAX_LENGTH - lengthBeforeArgs;
+
+      it('limits url length', () => {
+        const numberOfArgs = Math.ceil(maxLengthOfArgs / lengthOfOneArg);
+
+        expect(
+          getUrl({
+            traceID: Array.from({ length: numberOfArgs }, () => trace0),
+          }).length
+        ).toBeLessThan(MAX_LENGTH);
+      });
+
+      it('does not over shorten', () => {
+        const numberOfArgs = Math.floor(maxLengthOfArgs / lengthOfOneArg);
+        const remainder = maxLengthOfArgs % lengthOfOneArg;
+        const ids = Array.from({ length: numberOfArgs }, () => trace0);
+        ids[ids.length - 1] = `${ids[ids.length - 1]}${'x'.repeat(remainder)}`;
+        ids.push(trace0);
+
+        expect(
+          getUrl({
+            traceID: ids,
+          }).length
+        ).toBe(MAX_LENGTH);
+      });
+    });
+  });
+
+  describe('getUrlState', () => {
+    it('gets search params', () => {
+      const service = 'svc-0';
+      const operation = 'op-0';
+      expect(getUrlState(`service=${service}&operation=${operation}`)).toEqual({ service, operation });
+    });
+
+    it('converts span to traceID and spanLinks', () => {
+      expect(getUrlState(`span=${span0}%40${trace0}`)).toEqual({
+        traceID: [trace0],
+        spanLinks: {
+          [trace0]: span0,
+        },
+      });
+    });
+
+    it('converts multiple spans to traceID and spanLinks', () => {
+      expect(
+        getUrlState(`span=${span0}%20${span1}%40${trace0}&span=${span2}%40${trace1}&traceID=${trace2}`)
+      ).toEqual({
+        traceID: expect.arrayContaining([trace0, trace1, trace2]),
+        spanLinks: {
+          [trace0]: `${span0} ${span1}`,
+          [trace1]: span2,
+        },
+      });
+    });
+
+    it('converts span param without spanIDs to just traceID', () => {
+      expect(getUrlState(`span=${span0}%20${span1}%40${trace0}&span=%40${trace1}&traceID=${trace2}`)).toEqual(
+        {
+          traceID: expect.arrayContaining([trace0, trace1, trace2]),
+          spanLinks: {
+            [trace0]: `${span0} ${span1}`,
+          },
+        }
+      );
+    });
+
+    it('handles duplicate traceIDs', () => {
+      expect(
+        getUrlState(
+          `span=${span0}%40${trace0}&span=${span1}%40${trace0}&span=${span2}%40${trace1}&traceID=${trace1}&traceID=${trace2}`
+        )
+      ).toEqual({
+        traceID: expect.arrayContaining([trace0, trace1, trace2]),
+        spanLinks: {
+          [trace0]: `${span0} ${span1}`,
+          [trace1]: span2,
+        },
+      });
+    });
+  });
+
+  describe('isSameQuery', () => {
+    const queryKeys = [
+      'end',
+      'limit',
+      'lookback',
+      'maxDuration',
+      'minDuration',
+      'operation',
+      'service',
+      'start',
+      'tags',
+    ];
+    const otherKey = 'other-key';
+    const baseQuery = queryKeys.reduce(
+      (res, curr, i) => ({
+        ...res,
+        [curr]: i % 2 ? curr : i,
+      }),
+      { [otherKey]: otherKey }
+    );
+
+    it('returns `false` if only one argument is falsy', () => {
+      expect(isSameQuery(baseQuery)).toBe(false);
+    });
+
+    it('returns `false` if a considered key is changed or omitted', () => {
+      queryKeys.forEach(key => {
+        const { [key]: _omitted, ...rest } = baseQuery;
+        expect(isSameQuery(baseQuery, rest)).toBe(false);
+        expect(isSameQuery(baseQuery, { ...rest, [key]: 'changed' })).toBe(false);
+      });
+    });
+
+    it('returns `true` if no considered keys are changed or omitted', () => {
+      expect(isSameQuery(baseQuery, { ...baseQuery })).toBe(true);
+
+      const { [otherKey]: _omitted, ...copy } = baseQuery;
+      expect(isSameQuery(baseQuery, copy)).toBe(true);
+      expect(isSameQuery(baseQuery, { ...copy, [otherKey]: 'changed' })).toBe(true);
+    });
+  });
+
+  describe('searchQueryFromUrl', () => {
+    it('returns null when no service, start, or end is present', () => {
+      expect(searchQueryFromUrl('?limit=20')).toBeNull();
+    });
+
+    it('uses explicit lookback from URL when present', () => {
+      const result = searchQueryFromUrl('?service=svc&start=1000000000&end=4600000000&lookback=1h');
+      expect(result?.lookback).toBe('1h');
+    });
+
+    it('reconstructs lookback from duration when lookback is absent', () => {
+      // 6-hour window in microseconds
+      const startUs = 1_000_000_000_000;
+      const endUs = startUs + 6 * 60 * 60 * 1_000_000;
+      const result = searchQueryFromUrl(`?service=svc&start=${startUs}&end=${endUs}`);
+      expect(result?.lookback).toBe('6h');
+    });
+
+    it('snaps up to the next bucket when duration falls between options', () => {
+      // 70-minute window → should snap up to 2h
+      const startUs = 1_000_000_000_000;
+      const endUs = startUs + 70 * 60 * 1_000_000;
+      const result = searchQueryFromUrl(`?service=svc&start=${startUs}&end=${endUs}`);
+      expect(result?.lookback).toBe('2h');
+    });
+
+    it('returns "custom" when duration exceeds the largest option', () => {
+      const startUs = 1_000_000_000_000;
+      const endUs = startUs + 100 * 24 * 60 * 60 * 1_000_000; // 100 days
+      const result = searchQueryFromUrl(`?service=svc&start=${startUs}&end=${endUs}`);
+      expect(result?.lookback).toBe('custom');
+    });
+
+    it('returns empty lookback when service is present but no timestamps', () => {
+      const result = searchQueryFromUrl('?service=svc');
+      expect(result?.lookback).toBe('');
+    });
+
+    it('derives start/end from lookback when old-style URL omits timestamps', () => {
+      const before = Date.now();
+      const result = searchQueryFromUrl(
+        '?service=frontend&lookback=1h&limit=20&tags=%7B%22driver%22%3A%22T789090C%22%7D'
+      );
+      const after = Date.now();
+      expect(result).not.toBeNull();
+      expect(result?.lookback).toBe('1h');
+      const startUs = Number(result?.start);
+      const endUs = Number(result?.end);
+      // end should be approximately now (within 1 second)
+      expect(endUs).toBeGreaterThanOrEqual(before * 1000);
+      expect(endUs).toBeLessThanOrEqual(after * 1000 + 1000 * 1000);
+      // start should be 1 hour before end
+      expect(endUs - startUs).toBeCloseTo(60 * 60 * 1_000_000, -6);
+    });
+  });
+});

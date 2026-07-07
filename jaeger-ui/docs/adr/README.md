@@ -1,0 +1,20 @@
+# Architecture Decision Records (ADRs)
+
+This directory contains Architecture Decision Records (ADRs) for the Jaeger UI project. ADRs document important architectural decisions made during the development of Jaeger UI, including the context, decision, and consequences of each choice.
+
+## What is an ADR?
+
+An Architecture Decision Record (ADR) is a document that captures an important architectural decision made along with its context and consequences. ADRs help teams understand why certain decisions were made and provide historical context for future contributors.
+
+## ADRs in This Repository
+
+- [ADR-0001: Design Token-Based Theming Architecture](./0001-design-token-based-theming.md) - Proposed approach for implementing dark mode and theming using CSS custom properties and design tokens
+- [ADR-0002: Migration from Legacy Jaeger Data Model to OTLP via API v3](./0002-otlp-api-v3-migration.md) - Comprehensive plan for migrating from legacy Jaeger JSON data model to OpenTelemetry Protocol (OTLP) data model via API v3 endpoints
+- [ADR-0003: Span Color Palette for Trace Visualization](./0003-span-color-palette.md) - Selection and architecture for a theme-aware, 20-color qualitative palette for span visualization
+- [ADR-0004: State Management Strategy for Jaeger UI](./0004-state-management-strategy.md) - Long-term architectural strategy for state management, recommending Zustand and TanStack Query
+- [ADR-0005: Current State Management Architecture](./0005-current-state-management-architecture.md) - Documentation of the existing multi-layered state management (Redux, TanStack Query, URL, Local Storage)
+- [ADR-0006: Side Panel Span Details and Tree-Only Mode](./0006-side-panel-span-details.md) - Optional side panel layout for span details with independent scrolling, and tree-only mode to hide timeline bars
+- [ADR-0007: Migrate to Vite+ (Full Vite Toolchain)](./0007-vite-plus-migration.md) - Replace the hybrid Webpack + Babel + Jest toolchain with a unified Vite + Vitest toolchain across the monorepo
+- [ADR-0008: Target state management architecture](./0008-target-state-management-architecture.md) - Where each kind of state should live post-migration; target data flows and layer boundaries (phased migration checklist, rollback, and success criteria are in ADR-0004)
+- [ADR-0009: Service Filter for Trace Timeline View](./0009-service-filter-trace-timeline.md) - Filter button in the Services column to prune spans by service, with subtree pruning, hex bitmask URL encoding, and localStorage defaults
+- [ADR-0010: Layout Settings Priority Stack](./0010-layout-settings-priority-stack.md) - Cascading priority system (URL > heuristics > localStorage) for resolving layout settings without corrupting user preferences
