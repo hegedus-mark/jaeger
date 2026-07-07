@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.0
+    container_name: elasticsearch-test
+    environment:
+      - discovery.type=single-node
+      - http.host=0.0.0.0
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+    ports:
+      - "9200:9200"
+    networks:
+      - jaeger-test
+
+  jaeger:
+    image: alpine:latest
+    container_name: jaeger-backend
+    volumes:
+      - ./jaeger-linux:/usr/bin/jaeger
+      - ./jaeger-config.yaml:/etc/jaeger/config.yaml
+    entrypoint: ["/usr/bin/jaeger", "--config", "/etc/jaeger/config.yaml"]
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - elasticsearch
+    networks:
+      - jaeger-test
+
+  hotrod:
+    image: alpine:latest
+    container_name: hotrod-microservice
+    volumes:
+      - ./hotrod-linux:/usr/bin/hotrod
+    entrypoint: ["/usr/bin/hotrod", "all"]
+    ports:
+      - "8080:8080"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    depends_on:
+      - jaeger
+    networks:
+      - jaeger-test
+
+networks:
+  jaeger-test:
+    name: jaeger-test

@@ -18,6 +18,7 @@ import (
 	"github.com/jaegertracing/jaeger/internal/metrics"
 	"github.com/jaegertracing/jaeger/internal/metrics/otelmetrics"
 	"github.com/jaegertracing/jaeger/internal/storage/elasticsearch/config"
+	"github.com/jaegertracing/jaeger/internal/storage/v2/api/metricstore"
 	"github.com/jaegertracing/jaeger/internal/storage/v2/api/tracestore"
 	"github.com/jaegertracing/jaeger/internal/telemetry"
 )
@@ -27,6 +28,7 @@ var _ Extension = (*storageExt)(nil)
 type Extension interface {
 	extension.Extension
 	TraceStorageFactory(name string) (tracestore.Factory, error)
+	MetricStorageFactory(name string) (metricstore.Factory, error)
 }
 
 type storageExt struct {
@@ -53,6 +55,18 @@ func GetTraceStoreFactory(name string, host component.Host) (tracestore.Factory,
 	}
 
 	return f, nil
+}
+
+func GetMetricStorageFactory(name string, host component.Host) (metricstore.Factory, error) {
+	ext, err := findExtension(host)
+	if err != nil {
+		return nil, err
+	}
+	return ext.MetricStorageFactory(name)
+}
+
+func (s *storageExt) MetricStorageFactory(name string) (metricstore.Factory, error) {
+	return nil, fmt.Errorf("cannot find metrics storage factory: metrics storage is not supported in this version")
 }
 
 func findExtension(host component.Host) (Extension, error) {

@@ -51,3 +51,4 @@ test-results.json
 build.log
 sidecar.py.orig
 jaeger.exe
+__debug_bin*

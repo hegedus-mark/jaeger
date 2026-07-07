@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'primeicons/primeicons.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, app-root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: #020617; /* surface-950 */
+    color: #e2e8f0;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Tailwind custom utilities needed alongside PrimeNG */
+@layer utilities {
+  .text-primary { color: #00d4aa; }
+  .bg-primary { background-color: #00d4aa; }
+  .border-primary { border-color: #00d4aa; }
+  .bg-surface-950 { background-color: #020617; }
+  .bg-surface-900 { background-color: #0f172a; }
+  .bg-surface-800 { background-color: #1e293b; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
