@@ -52,3 +52,5 @@ build.log
 sidecar.py.orig
 jaeger.exe
 __debug_bin*
+all-in-one-test/hotrod-linux
+all-in-one-test/jaeger-linux

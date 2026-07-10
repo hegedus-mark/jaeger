@@ -1,137 +1,134 @@
 import { useEffect, useRef } from 'react';
-import { Trace } from './types';
+import { DirectedGraph, LayoutManager } from '@jaegertracing/plexus';
+import type { TEdge, TVertex } from '@jaegertracing/plexus/lib/types';
+import type { Trace, JaegerDependency } from './types';
+
+// ── Inline dark-mode CSS for plexus nodes ────────────────────────────────────
+const DAG_STYLES = `
+  :root {
+    --border-strong: rgba(255,255,255,0.15);
+    --border-default: rgba(255,255,255,0.1);
+    --surface-primary: #0f172a;
+    --surface-component-background: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+  }
+  .jaeger-dag-wrap { width:100%; height:100%; min-height:320px; position:relative; }
+  .jaeger-dag-wrap .DGraph { background: #0f172a; }
+  .jaeger-dag-wrap .DGraph--edges path { stroke: rgba(255,255,255,0.2); stroke-width:1.5; fill:none; }
+  .jaeger-dag-wrap .DGraph--edges marker { fill: rgba(255,255,255,0.3); }
+  .dag-node { display:flex; flex-direction:column; align-items:center; cursor:pointer; }
+  .dag-node__circle {
+    width:48px; height:48px; border-radius:50%; border:1.5px solid rgba(255,255,255,0.15);
+    background:#1e293b; margin-bottom:28px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.4);
+    transition:border-color .15s, background .15s;
+  }
+  .dag-node__circle.focal { border-color:#00d4aa; background:rgba(0,212,170,0.12); }
+  .dag-node__label {
+    position:absolute; top:52px; white-space:nowrap; font-size:11px; font-weight:600;
+    color:#94a3b8; background:#0f172a; padding:0 4px; text-align:center;
+  }
+`;
 
 interface Props {
   trace?: Trace;
+  dependencies?: JaegerDependency[];
+  selectedService?: string;
 }
 
-interface Node {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  count: number;
-}
+function buildFromTrace(trace: Trace): { vertices: TVertex[]; edges: TEdge[] } {
+  const keys = new Set<string>(trace.services.map(s => s.name));
+  const vertices: TVertex[] = Array.from(keys).map(key => ({ key }));
 
-interface Edge {
-  from: string;
-  to: string;
-  count: number;
-}
-
-function buildGraph(trace: Trace): { nodes: Node[]; edges: Edge[] } {
-  const nodes: Record<string, Node> = {};
-  const edges: Record<string, Edge> = {};
-  const W = 600, H = 320;
-
-  // Collect unique services
-  trace.services.forEach((svc, i) => {
-    const angle = (i / trace.services.length) * 2 * Math.PI - Math.PI / 2;
-    nodes[svc.name] = {
-      id: svc.name,
-      label: svc.name,
-      x: W / 2 + Math.cos(angle) * 180,
-      y: H / 2 + Math.sin(angle) * 120,
-      count: svc.numberOfSpans,
-    };
-  });
-
-  // Build edges from span references
+  const edgeMap = new Map<string, TEdge>();
   trace.spans.forEach(span => {
-    span.references?.forEach(ref => {
-      const parentSpan = trace.spans.find(s => s.spanID === ref.spanID);
-      if (parentSpan && parentSpan.serviceName !== span.serviceName) {
-        const key = `${parentSpan.serviceName}->${span.serviceName}`;
-        edges[key] = edges[key]
-          ? { ...edges[key], count: edges[key].count + 1 }
-          : { from: parentSpan.serviceName, to: span.serviceName, count: 1 };
-      }
+    (span.references ?? []).forEach(ref => {
+      if (ref.refType !== 'CHILD_OF') return;
+      const parent = trace.spans.find(s => s.spanID === ref.spanID);
+      if (!parent || parent.serviceName === span.serviceName) return;
+      const k = `${parent.serviceName}→${span.serviceName}`;
+      if (!edgeMap.has(k)) edgeMap.set(k, { from: parent.serviceName, to: span.serviceName });
     });
   });
 
-  return { nodes: Object.values(nodes), edges: Object.values(edges) };
+  return { vertices, edges: Array.from(edgeMap.values()) };
 }
 
-export function TraceDag({ trace }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+function buildFromDeps(deps: JaegerDependency[]): { vertices: TVertex[]; edges: TEdge[] } {
+  const keys = new Set<string>();
+  deps.forEach(d => { keys.add(d.parent); keys.add(d.child); });
+  return {
+    vertices: Array.from(keys).map(key => ({ key })),
+    edges: deps.map(d => ({ from: d.parent, to: d.child })),
+  };
+}
+
+export function TraceDag({ trace, dependencies, selectedService = '' }: Props) {
+  const lmRef = useRef<InstanceType<typeof LayoutManager> | null>(null);
+
+  // Inject CSS once
+  useEffect(() => {
+    const id = 'jaeger-dag-styles';
+    if (!document.getElementById(id)) {
+      const el = document.createElement('style');
+      el.id = id;
+      el.textContent = DAG_STYLES;
+      document.head.appendChild(el);
+    }
+  }, []);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !trace) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    return () => {
+      lmRef.current?.stopAndRelease();
+      lmRef.current = null;
+    };
+  }, []);
 
-    const { nodes, edges } = buildGraph(trace);
-    const dpr = window.devicePixelRatio || 1;
-    const W = canvas.offsetWidth;
-    const H = canvas.offsetHeight;
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    ctx.scale(dpr, dpr);
+  const hasData = trace || (dependencies && dependencies.length > 0);
 
-    ctx.clearRect(0, 0, W, H);
-
-    // Draw edges
-    edges.forEach(edge => {
-      const from = nodes.find(n => n.id === edge.from);
-      const to = nodes.find(n => n.id === edge.to);
-      if (!from || !to) return;
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.strokeStyle = 'rgba(0,212,170,0.3)';
-      ctx.lineWidth = Math.min(edge.count, 4);
-      ctx.stroke();
-
-      // Arrowhead
-      const angle = Math.atan2(to.y - from.y, to.x - from.x);
-      const r = 28;
-      const ax = to.x - Math.cos(angle) * r;
-      const ay = to.y - Math.sin(angle) * r;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(ax - 8 * Math.cos(angle - 0.4), ay - 8 * Math.sin(angle - 0.4));
-      ctx.lineTo(ax - 8 * Math.cos(angle + 0.4), ay - 8 * Math.sin(angle + 0.4));
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,212,170,0.6)';
-      ctx.fill();
-    });
-
-    // Draw nodes
-    nodes.forEach(node => {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, 26, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,212,170,0.15)';
-      ctx.fill();
-      ctx.strokeStyle = '#00d4aa';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      ctx.fillStyle = '#fff';
-      ctx.font = '11px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // Truncate label
-      const label = node.label.length > 10 ? node.label.slice(0, 9) + '…' : node.label;
-      ctx.fillText(label, node.x, node.y - 5);
-      ctx.fillStyle = '#00d4aa';
-      ctx.font = '10px Inter, sans-serif';
-      ctx.fillText(`${node.count} spans`, node.x, node.y + 8);
-    });
-  }, [trace]);
-
-  if (!trace) {
+  if (!hasData) {
     return (
-      <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-        Load a trace to see the service graph
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#64748b', fontSize: 14 }}>
+        Load a trace or fetch dependencies to see the service graph
       </div>
     );
   }
 
+  const { vertices, edges } = trace
+    ? buildFromTrace(trace)
+    : buildFromDeps(dependencies!);
+
+  if (vertices.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#64748b', fontSize: 14 }}>
+        No service relationships found in this trace
+      </div>
+    );
+  }
+
+  if (!lmRef.current) {
+    lmRef.current = new LayoutManager({ useDotEdges: true, rankdir: 'LR', ranksep: 2.5 });
+  }
+
+  const getNodeLabel = (vtx: TVertex) => (
+    <div className="dag-node">
+      <div className={`dag-node__circle${vtx.key === selectedService ? ' focal' : ''}`} />
+      <div className="dag-node__label">{vtx.key}</div>
+    </div>
+  );
+
   return (
-    <div className="w-full h-full relative">
-      <canvas ref={canvasRef} className="w-full h-full" style={{ minHeight: '280px' }} />
+    <div className="jaeger-dag-wrap">
+      <DirectedGraph
+        layoutManager={lmRef.current}
+        vertices={vertices}
+        edges={edges}
+        getNodeLabel={getNodeLabel}
+        zoom
+        minimap
+        minimapClassName="Minimap--minimap"
+      />
     </div>
   );
 }

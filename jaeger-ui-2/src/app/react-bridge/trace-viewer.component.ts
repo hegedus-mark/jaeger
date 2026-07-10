@@ -2,25 +2,25 @@ import {
   Component, Input, OnInit, OnDestroy, OnChanges,
   ElementRef, ViewChild, ChangeDetectionStrategy,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { createRoot, Root } from 'react-dom/client';
 import { createElement } from 'react';
-import { TraceGraph } from '../../react/TraceGraph';
+import { TraceTimeline } from '../../react/timeline/TraceTimeline';
 import { TraceDag } from '../../react/TraceDag';
-import { Trace } from '../../react/types';
+import { Trace, JaegerDependency } from '../../react/types';
 
 export type GraphMode = 'timeline' | 'dag';
 
 @Component({
   selector: 'app-trace-viewer',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div #container class="w-full h-full"></div>`,
 })
 export class TraceViewerComponent implements OnInit, OnChanges, OnDestroy {
   @Input() traceId = '';
   @Input() trace: Trace | undefined;
+  @Input() dependencies: JaegerDependency[] = [];
   @Input() mode: GraphMode = 'timeline';
 
   @ViewChild('container', { static: true }) containerRef!: ElementRef<HTMLDivElement>;
@@ -43,9 +43,16 @@ export class TraceViewerComponent implements OnInit, OnChanges, OnDestroy {
 
   private render(): void {
     if (!this.root) return;
-    const component = this.mode === 'dag' ? TraceDag : TraceGraph;
-    this.root.render(
-      createElement(component as any, { traceId: this.traceId, trace: this.trace })
-    );
+    if (this.mode === 'dag') {
+      this.root.render(
+        createElement(TraceDag, { trace: this.trace, dependencies: this.dependencies })
+      );
+    } else {
+      // Only render if we have a trace — TraceTimeline requires it
+      if (!this.trace) return;
+      this.root.render(
+        createElement(TraceTimeline, { traceId: this.traceId, trace: this.trace })
+      );
+    }
   }
 }

@@ -7,6 +7,9 @@ export interface SearchState {
   results: Trace[];
   loading: boolean;
   error: string | null;
+  services: string[];
+  operations: string[];
+  servicesLoading: boolean;
 }
 
 const initial: SearchState = {
@@ -14,6 +17,9 @@ const initial: SearchState = {
   results: [],
   loading: false,
   error: null,
+  services: [],
+  operations: [],
+  servicesLoading: false,
 };
 
 @Injectable({ providedIn: 'root' })
@@ -34,6 +40,14 @@ export class SearchStateService {
 
   setResults(results: Trace[]): void {
     this.state$.next({ ...this.state$.value, results, loading: false, error: null });
+  }
+
+  setServices(services: string[]): void {
+    this.state$.next({ ...this.state$.value, services, servicesLoading: false });
+  }
+
+  setOperations(operations: string[]): void {
+    this.state$.next({ ...this.state$.value, operations });
   }
 
   setError(error: string): void {

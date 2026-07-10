@@ -1,4 +1,8 @@
-// Shared types used by both Angular and React layers
+export interface JaegerDependency {
+  parent: string;
+  child: string;
+  callCount: number;
+}
 
 export interface Span {
   spanID: string;

@@ -1,0 +1,48 @@
+<div class="p-6 max-w-5xl mx-auto">
+  <h1 class="text-2xl font-semibold text-white mb-6">Services</h1>
+
+  @if (loading()) {
+    <div class="flex justify-center py-16">
+      <p-progressSpinner strokeWidth="3" styleClass="w-12 h-12" />
+    </div>
+  }
+
+  @if (error()) {
+    <div class="p-3 rounded-lg bg-red-900/30 border border-red-500/30 text-red-300 text-sm mb-4">
+      <i class="pi pi-exclamation-triangle mr-2"></i>{{ error() }}
+      <p class="mt-1 text-red-400/70 text-xs">Make sure Jaeger is running on localhost:16686</p>
+    </div>
+  }
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    @for (svc of services(); track svc.name) {
+      <div class="bg-surface-800/50 border border-white/8 rounded-xl p-5 hover:border-primary/40 transition-all">
+        <div class="flex items-start justify-between mb-3">
+          <h2 class="text-base font-medium text-white">{{ svc.name }}</h2>
+          <span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+            {{ svc.operations.length }} ops
+          </span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          @for (op of svc.operations.slice(0, 8); track op) {
+            <span class="text-xs px-2 py-0.5 bg-white/5 text-slate-300 rounded border border-white/8">
+              {{ op }}
+            </span>
+          }
+          @if (svc.operations.length > 8) {
+            <span class="text-xs px-2 py-0.5 text-slate-500 rounded">
+              +{{ svc.operations.length - 8 }} more
+            </span>
+          }
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (!loading() && !error() && services().length === 0) {
+    <div class="text-center py-16 text-slate-500">
+      <i class="pi pi-server text-4xl mb-3 block opacity-30"></i>
+      <p>No services found</p>
+    </div>
+  }
+</div>

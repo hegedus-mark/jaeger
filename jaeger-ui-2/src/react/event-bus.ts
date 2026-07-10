@@ -1,6 +1,3 @@
-// Copyright (c) 2024 Jaeger Authors.
-// SPDX-License-Identifier: Apache-2.0
-
 import { Subject, Observable, filter, map } from 'rxjs';
 
 export interface BusEvent<T = unknown> {
